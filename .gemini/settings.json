@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "gns3": {
+      "command": "~/gns3-mcp-server/run.bat",
+      "args": []
+    }
+  }
+}
