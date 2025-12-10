@@ -5,15 +5,18 @@ GNS3 MCP Server - FastMCP implementation for GNS3 network simulation integration
 This MCP server provides tools for managing GNS3 network topologies,
 project management, and simulation control through direct HTTP API calls.
 """
-
-import asyncio
-import json
-import logging
-from typing import Any, Dict, List, Optional
-
-import httpx
-from fastmcp import FastMCP
 from pydantic import BaseModel, Field
+from fastmcp import FastMCP
+import httpx
+from typing import Any, Dict, List, Optional
+import json
+import asyncio
+import sys
+import logging
+
+# Silence all logging that might print to STDOUT
+logging.getLogger().setLevel(logging.CRITICAL)
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -23,28 +26,35 @@ logger = logging.getLogger(__name__)
 mcp = FastMCP("GNS3 Network Simulator")
 
 # Configuration models
+
+
 class GNS3Config(BaseModel):
     """Configuration for GNS3 server connection."""
-    server_url: str = Field(default="http://localhost:3080", description="GNS3 server URL")
-    username: Optional[str] = Field(default=None, description="Username for authentication")
-    password: Optional[str] = Field(default=None, description="Password for authentication")
-    verify_ssl: bool = Field(default=True, description="Verify SSL certificates")
+    server_url: str = Field(default="http://localhost:3080",
+                            description="GNS3 server URL")
+    username: Optional[str] = Field(
+        default=None, description="Username for authentication")
+    password: Optional[str] = Field(
+        default=None, description="Password for authentication")
+    verify_ssl: bool = Field(
+        default=True, description="Verify SSL certificates")
+
 
 class GNS3APIClient:
     """HTTP client for GNS3 REST API."""
-    
+
     def __init__(self, config: GNS3Config):
         self.config = config
         self.base_url = config.server_url.rstrip('/')
         self.auth = None
         if config.username and config.password:
             self.auth = (config.username, config.password)
-    
+
     async def _request(self, method: str, endpoint: str, data: Optional[Dict] = None) -> Dict[str, Any]:
         """Make HTTP request to GNS3 API."""
-        url = f"{self.base_url}/v3{endpoint}"
+        url = f"{self.base_url}/v2{endpoint}"
         headers = {"Content-Type": "application/json"}
-        
+
         try:
             async with httpx.AsyncClient(verify=self.config.verify_ssl, timeout=30.0) as client:
                 if method.upper() == "GET":
@@ -57,25 +67,26 @@ class GNS3APIClient:
                     response = await client.delete(url, headers=headers, auth=self.auth)
                 else:
                     raise ValueError(f"Unsupported HTTP method: {method}")
-                
+
                 response.raise_for_status()
                 return response.json()
-                
+
         except httpx.RequestError as e:
             logger.error(f"Request error: {e}")
             raise Exception(f"Failed to connect to GNS3 server: {e}")
         except httpx.HTTPStatusError as e:
             logger.error(f"HTTP error: {e}")
-            raise Exception(f"GNS3 API error: {e.response.status_code} - {e.response.text}")
-    
+            raise Exception(
+                f"GNS3 API error: {e.response.status_code} - {e.response.text}")
+
     async def get_server_info(self) -> Dict[str, Any]:
         """Get GNS3 server information."""
         return await self._request("GET", "/version")
-    
+
     async def get_projects(self) -> List[Dict[str, Any]]:
         """Get all projects."""
         return await self._request("GET", "/projects")
-    
+
     async def create_project(self, name: str, auto_close: bool = False) -> Dict[str, Any]:
         """Create a new project."""
         data = {
@@ -83,58 +94,64 @@ class GNS3APIClient:
             "auto_close": auto_close
         }
         return await self._request("POST", "/projects", data)
-    
+
     async def get_project(self, project_id: str) -> Dict[str, Any]:
         """Get project details."""
         return await self._request("GET", f"/projects/{project_id}")
-    
+
     async def open_project(self, project_id: str) -> Dict[str, Any]:
         """Open a project."""
-        return await self._request("PUT", f"/projects/{project_id}/open")
-    
+        return await self._request("POST", f"/projects/{project_id}/open")
+
+    async def close_project(self, project_id: str) -> Dict[str, Any]:
+        """Close a project."""
+        return await self._request("POST", f"/projects/{project_id}/close")
+
     async def get_project_nodes(self, project_id: str) -> List[Dict[str, Any]]:
         """Get all nodes in a project."""
         return await self._request("GET", f"/projects/{project_id}/nodes")
-    
+
     async def get_project_links(self, project_id: str) -> List[Dict[str, Any]]:
         """Get all links in a project."""
         return await self._request("GET", f"/projects/{project_id}/links")
-    
+
     async def create_node(self, project_id: str, node_data: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new node."""
         return await self._request("POST", f"/projects/{project_id}/nodes", node_data)
-    
+
     async def get_node(self, project_id: str, node_id: str) -> Dict[str, Any]:
         """Get node details."""
         return await self._request("GET", f"/projects/{project_id}/nodes/{node_id}")
-    
+
     async def update_node(self, project_id: str, node_id: str, node_data: Dict[str, Any]) -> Dict[str, Any]:
         """Update node."""
         return await self._request("PUT", f"/projects/{project_id}/nodes/{node_id}", node_data)
-    
+
     async def start_node(self, project_id: str, node_id: str) -> Dict[str, Any]:
         """Start a node."""
         return await self._request("POST", f"/projects/{project_id}/nodes/{node_id}/start")
-    
+
     async def stop_node(self, project_id: str, node_id: str) -> Dict[str, Any]:
         """Stop a node."""
         return await self._request("POST", f"/projects/{project_id}/nodes/{node_id}/stop")
-    
+
     async def create_link(self, project_id: str, link_data: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new link."""
         return await self._request("POST", f"/projects/{project_id}/links", link_data)
-    
+
     async def start_capture(self, project_id: str, link_id: str, capture_file_name: str) -> Dict[str, Any]:
         """Start packet capture on a link."""
         data = {"capture_file_name": capture_file_name}
         return await self._request("POST", f"/projects/{project_id}/links/{link_id}/start_capture", data)
-    
+
     async def create_snapshot(self, project_id: str, name: str) -> Dict[str, Any]:
         """Create a project snapshot."""
         data = {"name": name}
         return await self._request("POST", f"/projects/{project_id}/snapshots", data)
 
 # Tool: List all GNS3 projects
+
+
 @mcp.tool
 async def gns3_list_projects(
     server_url: str = "http://localhost:3080",
@@ -142,25 +159,26 @@ async def gns3_list_projects(
     password: Optional[str] = None
 ) -> Dict[str, Any]:
     """List all projects on the GNS3 server.
-    
+
     Args:
         server_url: GNS3 server URL (default: http://localhost:3080)
         username: Optional username for authentication
         password: Optional password for authentication
-    
+
     Returns:
         Dictionary containing project list with status
     """
     try:
-        config = GNS3Config(server_url=server_url, username=username, password=password)
+        config = GNS3Config(server_url=server_url,
+                            username=username, password=password)
         client = GNS3APIClient(config)
-        
+
         # Get server info
         server_info = await client.get_server_info()
-        
+
         # Get projects
         projects = await client.get_projects()
-        
+
         # Format projects summary
         projects_summary = []
         for project in projects:
@@ -171,7 +189,7 @@ async def gns3_list_projects(
                 "Total Links": project.get("stats", {}).get("links", 0),
                 "Status": project.get("status", "unknown")
             })
-        
+
         return {
             "status": "success",
             "server_info": {
@@ -191,6 +209,8 @@ async def gns3_list_projects(
         }
 
 # Tool: Create a new GNS3 project
+
+
 @mcp.tool
 async def gns3_create_project(
     name: str,
@@ -200,24 +220,25 @@ async def gns3_create_project(
     auto_close: bool = False
 ) -> Dict[str, Any]:
     """Create a new GNS3 project.
-    
+
     Args:
         name: Name for the new project
         server_url: GNS3 server URL
         username: Optional username for authentication
         password: Optional password for authentication
         auto_close: Auto-close the project when done
-    
+
     Returns:
         Dictionary containing project creation result
     """
     try:
-        config = GNS3Config(server_url=server_url, username=username, password=password)
+        config = GNS3Config(server_url=server_url,
+                            username=username, password=password)
         client = GNS3APIClient(config)
-        
+
         # Create project
         project = await client.create_project(name, auto_close)
-        
+
         return {
             "status": "success",
             "project": {
@@ -236,6 +257,8 @@ async def gns3_create_project(
         }
 
 # Tool: Open an existing project
+
+
 @mcp.tool
 async def gns3_open_project(
     project_id: str,
@@ -244,26 +267,27 @@ async def gns3_open_project(
     password: Optional[str] = None
 ) -> Dict[str, Any]:
     """Open an existing GNS3 project.
-    
+
     Args:
         project_id: ID of the project to open
         server_url: GNS3 server URL
         username: Optional username for authentication
         password: Optional password for authentication
-    
+
     Returns:
         Dictionary containing project opening result
     """
     try:
-        config = GNS3Config(server_url=server_url, username=username, password=password)
+        config = GNS3Config(server_url=server_url,
+                            username=username, password=password)
         client = GNS3APIClient(config)
-        
+
         # Get project details
         project = await client.get_project(project_id)
-        
+
         # Open project
         opened_project = await client.open_project(project_id)
-        
+
         return {
             "status": "success",
             "project": {
@@ -282,7 +306,46 @@ async def gns3_open_project(
             "project": None
         }
 
+# Tool: Close an open project
+
+
+@mcp.tool
+async def gns3_close_project(
+    project_id: str,
+    server_url: str = "http://localhost:3080",
+    username: Optional[str] = None,
+    password: Optional[str] = None
+) -> Dict[str, Any]:
+    """Close an open GNS3 project."""
+    try:
+        config = GNS3Config(server_url=server_url,
+                            username=username, password=password)
+        client = GNS3APIClient(config)
+
+        # Close project
+        closed_project = await client.close_project(project_id)
+
+        return {
+            "status": "success",
+            "project": {
+                "project_id": closed_project.get("project_id"),
+                "name": closed_project.get("name"),
+                "status": closed_project.get("status", "closed"),
+                "auto_close": closed_project.get("auto_close", False),
+                "stats": closed_project.get("stats", {})
+            }
+        }
+    except Exception as e:
+        logger.error(f"Failed to close project: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "project": None
+        }
+
 # Tool: Add a network node/device
+
+
 @mcp.tool
 async def gns3_add_node(
     project_id: str,
@@ -297,7 +360,7 @@ async def gns3_add_node(
     console_auto_start: bool = False
 ) -> Dict[str, Any]:
     """Add a network device/node to a GNS3 project.
-    
+
     Args:
         project_id: ID of the project to add node to
         node_name: Name for the new node
@@ -309,20 +372,21 @@ async def gns3_add_node(
         y: Y coordinate on the canvas (optional)
         console_type: Console type (optional)
         console_auto_start: Auto-start console (optional)
-    
+
     Returns:
         Dictionary containing node addition result
     """
     try:
-        config = GNS3Config(server_url=server_url, username=username, password=password)
+        config = GNS3Config(server_url=server_url,
+                            username=username, password=password)
         client = GNS3APIClient(config)
-        
+
         # Prepare node data
         node_data = {
             "name": node_name,
             "node_type": node_type
         }
-        
+
         if x is not None:
             node_data["x"] = x
         if y is not None:
@@ -331,10 +395,10 @@ async def gns3_add_node(
             node_data["console_type"] = console_type
         if console_auto_start:
             node_data["console_auto_start"] = console_auto_start
-        
+
         # Create node
         node = await client.create_node(project_id, node_data)
-        
+
         return {
             "status": "success",
             "node": {
@@ -356,6 +420,8 @@ async def gns3_add_node(
         }
 
 # Tool: Add a link between two nodes
+
+
 @mcp.tool
 async def gns3_add_link(
     project_id: str,
@@ -368,7 +434,7 @@ async def gns3_add_link(
     password: Optional[str] = None
 ) -> Dict[str, Any]:
     """Add a link between two nodes in a GNS3 project.
-    
+
     Args:
         project_id: ID of the project
         node_a_id: ID of the first node
@@ -378,31 +444,65 @@ async def gns3_add_link(
         server_url: GNS3 server URL
         username: Optional username for authentication
         password: Optional password for authentication
-    
+
     Returns:
         Dictionary containing link addition result
     """
     try:
-        config = GNS3Config(server_url=server_url, username=username, password=password)
+        config = GNS3Config(server_url=server_url,
+                            username=username, password=password)
         client = GNS3APIClient(config)
-        
-        # Prepare link data
-        link_data = {
-            "nodes": [
-                {
-                    "node_id": node_a_id,
-                    "port_name": node_a_port
-                },
-                {
-                    "node_id": node_b_id,
-                    "port_name": node_b_port
-                }
-            ]
-        }
-        
+
+        def parse_port(port: Optional[str]) -> Dict[str, int]:
+            """
+            Convert interface strings into adapter/port numbers.
+            Rules:
+            - Gigabit/Fast (Gi/Fa...) on IOSv/IOSvL3 (qemu): adapter = (first number * 4) + second number, port = 0.
+              e.g., Gi0/1 -> adapter 1, Gi1/0 -> adapter 4, Gi3/2 -> adapter 14.
+            - EthernetX/Y on IOU: adapter = X, port = Y.
+            - Numeric "X/Y": adapter = X, port = Y.
+            - Single numeric "N": adapter = 0, port = N.
+            """
+            if port is None:
+                raise ValueError("port is required")
+            if isinstance(port, (list, tuple)) and len(port) == 2:
+                return {"adapter_number": int(port[0]), "port_number": int(port[1])}
+            if not isinstance(port, str):
+                raise ValueError(f"Unable to parse port '{port}'")
+
+            p = port.strip()
+            # Identify prefix
+            prefix = ''.join(ch for ch in p if ch.isalpha())
+            # Strip leading letters for numeric split
+            while p and not p[0].isdigit():
+                p = p[1:]
+            # Split numbers
+            if "/" in p:
+                a_str, b_str = p.split("/", 1)
+                a, b = int(a_str), int(b_str)
+                if prefix.lower().startswith(("gi", "fa")):
+                    adapter_idx = a * 4 + b
+                    return {"adapter_number": adapter_idx, "port_number": 0}
+                # IOU Ethernet and generic
+                return {"adapter_number": a, "port_number": b}
+            if p.isdigit():
+                return {"adapter_number": 0, "port_number": int(p)}
+
+            raise ValueError(f"Unable to parse port '{port}'")
+
+        # Prepare link data with adapter/port numbers when possible
+        nodes = []
+        for nid, p in ((node_a_id, node_a_port), (node_b_id, node_b_port)):
+            entry: Dict[str, Any] = {"node_id": nid}
+            parsed = parse_port(p)
+            entry.update(parsed)
+            nodes.append(entry)
+
+        link_data = {"nodes": nodes}
+
         # Create link
         link = await client.create_link(project_id, link_data)
-        
+
         return {
             "status": "success",
             "link": {
@@ -421,6 +521,8 @@ async def gns3_add_link(
         }
 
 # Tool: Configure device settings
+
+
 @mcp.tool
 async def gns3_configure_device(
     project_id: str,
@@ -433,7 +535,7 @@ async def gns3_configure_device(
     properties: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """Configure settings for a network device.
-    
+
     Args:
         project_id: ID of the project
         node_id: ID of the node to configure
@@ -443,14 +545,15 @@ async def gns3_configure_device(
         console_type: Console type to configure (optional)
         console_auto_start: Auto-start console setting (optional)
         properties: Additional configuration properties (optional)
-    
+
     Returns:
         Dictionary containing configuration result
     """
     try:
-        config = GNS3Config(server_url=server_url, username=username, password=password)
+        config = GNS3Config(server_url=server_url,
+                            username=username, password=password)
         client = GNS3APIClient(config)
-        
+
         # Prepare configuration parameters
         config_params = {}
         if console_type is not None:
@@ -459,10 +562,10 @@ async def gns3_configure_device(
             config_params["console_auto_start"] = console_auto_start
         if properties is not None:
             config_params.update(properties)
-        
+
         # Update node configuration
         updated_node = await client.update_node(project_id, node_id, config_params)
-        
+
         return {
             "status": "success",
             "node": {
@@ -482,6 +585,8 @@ async def gns3_configure_device(
         }
 
 # Tool: Start network simulation
+
+
 @mcp.tool
 async def gns3_start_simulation(
     project_id: str,
@@ -490,26 +595,27 @@ async def gns3_start_simulation(
     password: Optional[str] = None
 ) -> Dict[str, Any]:
     """Start all nodes in a network simulation.
-    
+
     Args:
         project_id: ID of the project to start
         server_url: GNS3 server URL
         username: Optional username for authentication
         password: Optional password for authentication
-    
+
     Returns:
         Dictionary containing simulation start result
     """
     try:
-        config = GNS3Config(server_url=server_url, username=username, password=password)
+        config = GNS3Config(server_url=server_url,
+                            username=username, password=password)
         client = GNS3APIClient(config)
-        
+
         # Get all nodes
         nodes = await client.get_project_nodes(project_id)
-        
+
         started_nodes = []
         failed_nodes = []
-        
+
         # Start each node
         for node in nodes:
             try:
@@ -525,7 +631,7 @@ async def gns3_start_simulation(
                     "name": node["name"],
                     "error": str(e)
                 })
-        
+
         return {
             "status": "success",
             "project_id": project_id,
@@ -543,6 +649,8 @@ async def gns3_start_simulation(
         }
 
 # Tool: Stop network simulation
+
+
 @mcp.tool
 async def gns3_stop_simulation(
     project_id: str,
@@ -551,26 +659,27 @@ async def gns3_stop_simulation(
     password: Optional[str] = None
 ) -> Dict[str, Any]:
     """Stop all nodes in a network simulation.
-    
+
     Args:
         project_id: ID of the project to stop
         server_url: GNS3 server URL
         username: Optional username for authentication
         password: Optional password for authentication
-    
+
     Returns:
         Dictionary containing simulation stop result
     """
     try:
-        config = GNS3Config(server_url=server_url, username=username, password=password)
+        config = GNS3Config(server_url=server_url,
+                            username=username, password=password)
         client = GNS3APIClient(config)
-        
+
         # Get all nodes
         nodes = await client.get_project_nodes(project_id)
-        
+
         stopped_nodes = []
         failed_nodes = []
-        
+
         # Stop each node
         for node in nodes:
             try:
@@ -586,7 +695,7 @@ async def gns3_stop_simulation(
                     "name": node["name"],
                     "error": str(e)
                 })
-        
+
         return {
             "status": "success",
             "project_id": project_id,
@@ -604,6 +713,8 @@ async def gns3_stop_simulation(
         }
 
 # Tool: Capture network traffic on links
+
+
 @mcp.tool
 async def gns3_capture_traffic(
     project_id: str,
@@ -614,7 +725,7 @@ async def gns3_capture_traffic(
     password: Optional[str] = None
 ) -> Dict[str, Any]:
     """Start capturing network traffic on a link.
-    
+
     Args:
         project_id: ID of the project
         link_id: ID of the link to capture on
@@ -622,17 +733,18 @@ async def gns3_capture_traffic(
         server_url: GNS3 server URL
         username: Optional username for authentication
         password: Optional password for authentication
-    
+
     Returns:
         Dictionary containing capture initiation result
     """
     try:
-        config = GNS3Config(server_url=server_url, username=username, password=password)
+        config = GNS3Config(server_url=server_url,
+                            username=username, password=password)
         client = GNS3APIClient(config)
-        
+
         # Start capture
         result = await client.start_capture(project_id, link_id, capture_file)
-        
+
         return {
             "status": "success",
             "link_id": link_id,
@@ -649,6 +761,8 @@ async def gns3_capture_traffic(
         }
 
 # Tool: Get current network topology
+
+
 @mcp.tool
 async def gns3_get_topology(
     project_id: str,
@@ -657,25 +771,26 @@ async def gns3_get_topology(
     password: Optional[str] = None
 ) -> Dict[str, Any]:
     """Get the current network topology for a project.
-    
+
     Args:
         project_id: ID of the project
         server_url: GNS3 server URL
         username: Optional username for authentication
         password: Optional password for authentication
-    
+
     Returns:
         Dictionary containing topology information
     """
     try:
-        config = GNS3Config(server_url=server_url, username=username, password=password)
+        config = GNS3Config(server_url=server_url,
+                            username=username, password=password)
         client = GNS3APIClient(config)
-        
+
         # Get project, nodes, and links
         project = await client.get_project(project_id)
         nodes = await client.get_project_nodes(project_id)
         links = await client.get_project_links(project_id)
-        
+
         # Format nodes summary
         nodes_summary = []
         for node in nodes:
@@ -686,20 +801,22 @@ async def gns3_get_topology(
                 "ID": node.get("node_id", ""),
                 "Node Type": node.get("node_type", "unknown")
             })
-        
+
         # Format links summary
         links_summary = []
         for link in links:
-            node_a = next((n for n in nodes if n["node_id"] == link["nodes"][0]["node_id"]), {})
-            node_b = next((n for n in nodes if n["node_id"] == link["nodes"][1]["node_id"]), {})
-            
+            node_a = next(
+                (n for n in nodes if n["node_id"] == link["nodes"][0]["node_id"]), {})
+            node_b = next(
+                (n for n in nodes if n["node_id"] == link["nodes"][1]["node_id"]), {})
+
             links_summary.append({
                 "Node A": node_a.get("name", "Unknown"),
                 "Port A": link["nodes"][0].get("port_name", "N/A"),
                 "Node B": node_b.get("name", "Unknown"),
                 "Port B": link["nodes"][1].get("port_name", "N/A")
             })
-        
+
         return {
             "status": "success",
             "project": {
@@ -725,6 +842,8 @@ async def gns3_get_topology(
         }
 
 # Tool: Save project
+
+
 @mcp.tool
 async def gns3_save_project(
     project_id: str,
@@ -734,21 +853,22 @@ async def gns3_save_project(
     snapshot_name: Optional[str] = None
 ) -> Dict[str, Any]:
     """Save a GNS3 project.
-    
+
     Args:
         project_id: ID of the project to save
         server_url: GNS3 server URL
         username: Optional username for authentication
         password: Optional password for authentication
         snapshot_name: Optional name for a snapshot
-    
+
     Returns:
         Dictionary containing save result
     """
     try:
-        config = GNS3Config(server_url=server_url, username=username, password=password)
+        config = GNS3Config(server_url=server_url,
+                            username=username, password=password)
         client = GNS3APIClient(config)
-        
+
         # Create snapshot if name provided
         snapshot_info = None
         if snapshot_name:
@@ -758,10 +878,10 @@ async def gns3_save_project(
                 "name": snapshot_name,
                 "created_at": snapshot.get("created_at")
             }
-        
+
         # Get project status
         project = await client.get_project(project_id)
-        
+
         return {
             "status": "success",
             "project_id": project_id,
@@ -778,6 +898,8 @@ async def gns3_save_project(
         }
 
 # Tool: Export project
+
+
 @mcp.tool
 async def gns3_export_project(
     project_id: str,
@@ -789,7 +911,7 @@ async def gns3_export_project(
     include_node_images: bool = False
 ) -> Dict[str, Any]:
     """Export a GNS3 project to a file.
-    
+
     Args:
         project_id: ID of the project to export
         export_path: Path where to export the project
@@ -798,14 +920,15 @@ async def gns3_export_project(
         password: Optional password for authentication
         include_ios_images: Include IOS images in export
         include_node_images: Include node images in export
-    
+
     Returns:
         Dictionary containing export result
     """
     try:
-        config = GNS3Config(server_url=server_url, username=username, password=password)
+        config = GNS3Config(server_url=server_url,
+                            username=username, password=password)
         client = GNS3APIClient(config)
-        
+
         # Note: GNS3 export is typically done through the web interface
         # This tool provides the export parameters that can be used
         export_params = {
@@ -813,10 +936,10 @@ async def gns3_export_project(
             "include_ios_images": include_ios_images,
             "include_node_images": include_node_images
         }
-        
+
         # Get project info for confirmation
         project = await client.get_project(project_id)
-        
+
         return {
             "status": "success",
             "project_id": project_id,
