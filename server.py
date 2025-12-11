@@ -13,6 +13,9 @@ import json
 import asyncio
 import sys
 import logging
+import telnetlib
+import time
+from urllib.parse import urlparse
 
 # Silence all logging that might print to STDOUT
 logging.getLogger().setLevel(logging.CRITICAL)
@@ -144,10 +147,18 @@ class GNS3APIClient:
         data = {"capture_file_name": capture_file_name}
         return await self._request("POST", f"/projects/{project_id}/links/{link_id}/start_capture", data)
 
+    async def delete_link(self, project_id: str, link_id: str) -> Dict[str, Any]:
+        """Delete a link."""
+        return await self._request("DELETE", f"/projects/{project_id}/links/{link_id}")
+
     async def create_snapshot(self, project_id: str, name: str) -> Dict[str, Any]:
         """Create a project snapshot."""
         data = {"name": name}
         return await self._request("POST", f"/projects/{project_id}/snapshots", data)
+
+    async def update_project(self, project_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Update project properties."""
+        return await self._request("PUT", f"/projects/{project_id}", data)
 
 # Tool: List all GNS3 projects
 
@@ -760,6 +771,118 @@ async def gns3_capture_traffic(
             "link_id": link_id
         }
 
+# Tool: Push CLI commands to a node console (telnet)
+
+
+@mcp.tool
+async def gns3_push_cli(
+    project_id: str,
+    node_id: str,
+    commands: List[str],
+    server_url: str = "http://localhost:3080",
+    username: Optional[str] = None,
+    password: Optional[str] = None,
+    enable_password: Optional[str] = None,
+    console_host: Optional[str] = None,
+    console_port: Optional[int] = None,
+    delay_seconds: float = 0.2,
+    timeout_seconds: float = 8.0
+) -> Dict[str, Any]:
+    """Push CLI lines to a node via its telnet console.
+
+    Args:
+        project_id: ID of the project
+        node_id: ID of the node to configure
+        commands: Ordered list of CLI lines to send (no prompts required)
+        server_url: GNS3 server URL (used to resolve console host if not provided)
+        username/password: Optional HTTP auth for GNS3 API (not for console)
+        enable_password: Optional password to send after an "enable" command
+        console_host/console_port: Override console endpoint; if omitted, fetched from node details
+        delay_seconds: Sleep between commands to allow device to process
+        timeout_seconds: Socket timeout for the telnet session
+    """
+    try:
+        config = GNS3Config(server_url=server_url,
+                            username=username, password=password)
+        client = GNS3APIClient(config)
+
+        # Resolve console endpoint from node details when not provided
+        node = await client.get_node(project_id, node_id)
+        host = console_host or node.get("console_host")
+        if not host:
+            parsed = urlparse(server_url)
+            host = parsed.hostname or "127.0.0.1"
+        port = console_port or node.get("console")
+        if port is None:
+            raise Exception("Console port not available for this node.")
+
+        send_lines = list(commands or [])
+
+        def push_sync() -> Dict[str, Any]:
+            tn = telnetlib.Telnet(host, int(port), timeout_seconds)
+            # Nudge the prompt
+            tn.write(b"\n")
+            time.sleep(delay_seconds)
+            if enable_password:
+                tn.write(b"enable\n")
+                time.sleep(delay_seconds)
+                tn.write((enable_password + "\n").encode())
+                time.sleep(delay_seconds)
+            for line in send_lines:
+                tn.write((line + "\n").encode())
+                time.sleep(delay_seconds)
+            tn.write(b"\n")
+            tn.close()
+            return {"sent": send_lines}
+
+        result = await asyncio.to_thread(push_sync)
+        return {
+            "status": "success",
+            "console_host": host,
+            "console_port": port,
+            "sent_commands": result.get("sent", [])
+        }
+    except Exception as e:
+        logger.error(f"Failed to push CLI: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "node_id": node_id
+        }
+
+# Tool: Delete a link
+
+
+@mcp.tool
+async def gns3_delete_link(
+    project_id: str,
+    link_id: str,
+    server_url: str = "http://localhost:3080",
+    username: Optional[str] = None,
+    password: Optional[str] = None
+) -> Dict[str, Any]:
+    """Delete a link from a GNS3 project."""
+    try:
+        config = GNS3Config(server_url=server_url,
+                            username=username, password=password)
+        client = GNS3APIClient(config)
+
+        result = await client.delete_link(project_id, link_id)
+
+        return {
+            "status": "success",
+            "link_id": link_id,
+            "deleted": True,
+            "result": result
+        }
+    except Exception as e:
+        logger.error(f"Failed to delete link: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "link_id": link_id
+        }
+
 # Tool: Get current network topology
 
 
@@ -791,6 +914,40 @@ async def gns3_get_topology(
         nodes = await client.get_project_nodes(project_id)
         links = await client.get_project_links(project_id)
 
+        # Build a quick lookup to recover node_type when formatting links
+        node_lookup = {n.get("node_id"): n for n in nodes}
+
+        def friendly_iface(node_id: str, link_node: Dict[str, Any]) -> str:
+            """
+            Derive a user-friendly interface label from adapter/port numbers.
+            Rules mirror the add_link parsing:
+            - IOSv/IOSvL3 (qemu) encodes GiX/Y as adapter = X*4+Y, port_number = 0.
+            - IOU Ethernet keeps adapter=X, port=Y (map to E<X>/<Y>).
+            - If port_name already present from the API, return it.
+            - Fallback to adapter/port numbers if present, else "N/A".
+            """
+            # Use the API-provided port_name when present
+            if link_node.get("port_name"):
+                return str(link_node["port_name"])
+
+            adapter = link_node.get("adapter_number")
+            port = link_node.get("port_number")
+            if adapter is None or port is None:
+                return "N/A"
+
+            node_type = (node_lookup.get(node_id) or {}).get("node_type", "")
+            # Heuristic: qemu IOSv/IOSvL3 → treat as Gi with adapter = X*4+Y, port=0
+            if node_type in {"qemu", "iou"}:
+                # qemu IOSv/IOSvL3 encoding: adapter=N => Gi{N//4}/{N%4} when port==0
+                if node_type == "qemu" and port == 0:
+                    return f"Gi{adapter//4}/{adapter % 4}"
+                # IOU Ethernet: adapter/port as E{adapter}/{port}
+                if node_type == "iou":
+                    return f"E{adapter}/{port}"
+
+            # Generic fallback
+            return f"{adapter}/{port}"
+
         # Format nodes summary
         nodes_summary = []
         for node in nodes:
@@ -810,11 +967,19 @@ async def gns3_get_topology(
             node_b = next(
                 (n for n in nodes if n["node_id"] == link["nodes"][1]["node_id"]), {})
 
+            node_a_ep = link["nodes"][0]
+            node_b_ep = link["nodes"][1]
+
             links_summary.append({
+                "link_id": link.get("link_id", ""),
                 "Node A": node_a.get("name", "Unknown"),
-                "Port A": link["nodes"][0].get("port_name", "N/A"),
+                "Port A": friendly_iface(node_a_ep.get("node_id", ""), node_a_ep),
+                "adapter_a": node_a_ep.get("adapter_number"),
+                "port_a": node_a_ep.get("port_number"),
                 "Node B": node_b.get("name", "Unknown"),
-                "Port B": link["nodes"][1].get("port_name", "N/A")
+                "Port B": friendly_iface(node_b_ep.get("node_id", ""), node_b_ep),
+                "adapter_b": node_b_ep.get("adapter_number"),
+                "port_b": node_b_ep.get("port_number")
             })
 
         return {
@@ -955,6 +1120,81 @@ async def gns3_export_project(
             "status": "error",
             "error": str(e),
             "project_id": project_id
+        }
+
+# Tool: Update project properties
+
+
+@mcp.tool
+async def gns3_update_project(
+    project_id: str,
+    server_url: str = "http://localhost:3080",
+    username: Optional[str] = None,
+    password: Optional[str] = None,
+    auto_close: Optional[bool] = None,
+    name: Optional[str] = None
+) -> Dict[str, Any]:
+    """Update project properties (e.g., auto_close, name)."""
+    try:
+        config = GNS3Config(server_url=server_url,
+                            username=username, password=password)
+        client = GNS3APIClient(config)
+
+        payload: Dict[str, Any] = {}
+        if auto_close is not None:
+            payload["auto_close"] = auto_close
+        if name is not None:
+            payload["name"] = name
+        if not payload:
+            raise ValueError("No update fields provided.")
+
+        updated = await client.update_project(project_id, payload)
+        return {
+            "status": "success",
+            "project": updated
+        }
+    except Exception as e:
+        logger.error(f"Failed to update project: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "project": None
+        }
+
+# Tool: Get project settings (includes auto_close)
+
+
+@mcp.tool
+async def gns3_get_project_settings(
+    project_id: str,
+    server_url: str = "http://localhost:3080",
+    username: Optional[str] = None,
+    password: Optional[str] = None
+) -> Dict[str, Any]:
+    """Get project settings such as auto_close, name, status, and stats."""
+    try:
+        config = GNS3Config(server_url=server_url,
+                            username=username, password=password)
+        client = GNS3APIClient(config)
+
+        project = await client.get_project(project_id)
+
+        return {
+            "status": "success",
+            "project": {
+                "project_id": project.get("project_id"),
+                "name": project.get("name"),
+                "status": project.get("status"),
+                "auto_close": project.get("auto_close"),
+                "stats": project.get("stats", {})
+            }
+        }
+    except Exception as e:
+        logger.error(f"Failed to get project settings: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "project": None
         }
 
 if __name__ == "__main__":
