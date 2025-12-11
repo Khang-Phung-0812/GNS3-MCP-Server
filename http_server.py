@@ -8,6 +8,7 @@ from typing import Any, Dict, Callable, List, Union, get_args, get_origin
 import requests
 from fastapi import FastAPI, Request
 import uvicorn
+from fastmcp.tools.tool import ToolResult
 
 # Import your existing async tools from server.py
 import server   # this loads gns3_list_projects and others
@@ -602,17 +603,36 @@ async def mcp_endpoint(request: Request):
             result = callable_func(**arguments)
             result_payload = await result if inspect.isawaitable(result) else result
 
-            # MCP success response
+            # Normalize payload for MCP response
+            structured_content = None
+            text_payload: Any = result_payload
+
+            if isinstance(result_payload, ToolResult):
+                structured_content = result_payload.structured_content
+                text_payload = structured_content if structured_content is not None else result_payload.content
+            else:
+                structured_content = result_payload
+
+            # Ensure JSON-serializable structured content
+            try:
+                structured_json = json.loads(
+                    json.dumps(structured_content, default=str)
+                ) if structured_content is not None else None
+            except Exception:
+                structured_json = {"value": str(structured_content)}
+
+            # Build MCP success response with valid content type
             return {
                 "jsonrpc": jsonrpc,
                 "id": req_id,
                 "result": {
                     "content": [
                         {
-                            "type": "json",
-                            "json": result_payload,
+                            "type": "text",
+                            "text": json.dumps(text_payload, default=str),
                         }
                     ],
+                    "structuredContent": structured_json,
                     "isError": False,
                 },
             }

@@ -7,13 +7,13 @@ project management, and simulation control through direct HTTP API calls.
 """
 from pydantic import BaseModel, Field
 from fastmcp import FastMCP
+from fastmcp.tools.tool import ToolResult
 import httpx
 from typing import Any, Dict, List, Optional
 import json
 import asyncio
 import sys
 import logging
-import telnetlib
 import time
 from urllib.parse import urlparse
 
@@ -33,7 +33,7 @@ mcp = FastMCP("GNS3 Network Simulator")
 
 class GNS3Config(BaseModel):
     """Configuration for GNS3 server connection."""
-    server_url: str = Field(default="http://localhost:3080",
+    server_url: str = Field(default="http://100.95.123.100:3080",
                             description="GNS3 server URL")
     username: Optional[str] = Field(
         default=None, description="Username for authentication")
@@ -201,7 +201,7 @@ async def gns3_list_projects(
                 "Status": project.get("status", "unknown")
             })
 
-        return {
+        result_payload = {
             "status": "success",
             "server_info": {
                 "version": server_info.get("version", "unknown"),
@@ -210,6 +210,9 @@ async def gns3_list_projects(
             "projects": projects_summary,
             "total_projects": len(projects_summary)
         }
+
+        # Return structured content to satisfy MCP tool expectations
+        return ToolResult(structured_content=result_payload)
     except Exception as e:
         logger.error(f"Failed to list projects: {e}")
         return {
@@ -802,6 +805,13 @@ async def gns3_push_cli(
         timeout_seconds: Socket timeout for the telnet session
     """
     try:
+        try:
+            import telnetlib  # type: ignore
+        except ModuleNotFoundError:
+            raise ImportError(
+                "telnetlib is unavailable in this Python version. Install a telnet client library (e.g., telnetlib3) or run with Python 3.12 or below."
+            )
+
         config = GNS3Config(server_url=server_url,
                             username=username, password=password)
         client = GNS3APIClient(config)
@@ -844,6 +854,121 @@ async def gns3_push_cli(
         }
     except Exception as e:
         logger.error(f"Failed to push CLI: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "node_id": node_id
+        }
+
+
+@mcp.tool
+async def gns3_exec_cli(
+    project_id: str,
+    node_id: str,
+    commands: List[str],
+    server_url: str = "http://localhost:3080",
+    username: Optional[str] = None,
+    password: Optional[str] = None,
+    enable_password: Optional[str] = None,
+    console_host: Optional[str] = None,
+    console_port: Optional[int] = None,
+    delay_seconds: float = 0.3,
+    timeout_seconds: float = 10.0,
+) -> Dict[str, Any]:
+    """
+    Execute CLI commands on a node and capture output via telnet.
+
+    Args mirror gns3_push_cli but return captured output lines.
+    """
+    try:
+        try:
+            import telnetlib  # type: ignore
+        except ModuleNotFoundError:
+            raise ImportError(
+                "telnetlib is unavailable in this Python version. Install a telnet client library (e.g., telnetlib3) or run with Python 3.12 or below."
+            )
+
+        config = GNS3Config(server_url=server_url,
+                            username=username, password=password)
+        client = GNS3APIClient(config)
+
+        # Resolve console endpoint
+        node = await client.get_node(project_id, node_id)
+        host = console_host or node.get("console_host")
+        if not host:
+            parsed = urlparse(server_url)
+            host = parsed.hostname or "127.0.0.1"
+        port = console_port or node.get("console")
+        if port is None:
+            raise Exception("Console port not available for this node.")
+
+        send_lines = list(commands or [])
+
+        def exec_sync() -> Dict[str, Any]:
+            tn = telnetlib.Telnet(host, int(port), timeout_seconds)
+            buf: List[str] = []
+            tn.write(b"\n")
+            time.sleep(delay_seconds)
+            if enable_password:
+                tn.write(b"enable\n")
+                time.sleep(delay_seconds)
+                tn.write((enable_password + "\n").encode())
+                time.sleep(delay_seconds)
+            for line in send_lines:
+                tn.write((line + "\n").encode())
+                time.sleep(delay_seconds)
+            time.sleep(delay_seconds)
+            try:
+                # Read whatever is available without blocking too long
+                buf_bytes = tn.read_very_eager()
+                if buf_bytes:
+                    buf.append(buf_bytes.decode(errors="ignore"))
+            except Exception:
+                pass
+            tn.write(b"\n")
+            tn.close()
+            return {"sent": send_lines, "output": "".join(buf)}
+
+        result = await asyncio.to_thread(exec_sync)
+        return {
+            "status": "success",
+            "console_host": host,
+            "console_port": port,
+            "sent_commands": result.get("sent", []),
+            "output": result.get("output", "")
+        }
+    except Exception as e:
+        logger.error(f"Failed to exec CLI: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "node_id": node_id
+        }
+
+# Tool: Get node details (including console host/port)
+
+
+@mcp.tool
+async def gns3_get_node(
+    project_id: str,
+    node_id: str,
+    server_url: str = "http://localhost:3080",
+    username: Optional[str] = None,
+    password: Optional[str] = None
+) -> Dict[str, Any]:
+    """Get detailed node info, including console host/port."""
+    try:
+        config = GNS3Config(server_url=server_url,
+                            username=username, password=password)
+        client = GNS3APIClient(config)
+
+        node = await client.get_node(project_id, node_id)
+        return {
+            "status": "success",
+            "node": node,
+        }
+    except Exception as e:
+        logger.error(f"Failed to get node: {e}")
         return {
             "status": "error",
             "error": str(e),
