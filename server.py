@@ -16,6 +16,8 @@ import sys
 import logging
 import time
 from urllib.parse import urlparse
+from helper.console_harvester import capture_running_config
+import os
 
 # Silence all logging that might print to STDOUT
 logging.getLogger().setLevel(logging.CRITICAL)
@@ -29,6 +31,7 @@ logger = logging.getLogger(__name__)
 mcp = FastMCP("GNS3 Network Simulator")
 
 # Configuration models
+DEVICES_FILE = os.path.join(os.path.dirname(__file__), "helper", "devices.json")
 
 
 class GNS3Config(BaseModel):
@@ -943,6 +946,86 @@ async def gns3_exec_cli(
             "status": "error",
             "error": str(e),
             "node_id": node_id
+        }
+
+# Tool: Harvest running config via console harvester
+
+
+@mcp.tool
+async def harvest_running_config(device: str) -> Dict[str, str]:
+    """Capture the running configuration from a device using console_harvester."""
+    try:
+        if not isinstance(device, str) or not device.strip():
+            return {
+                "status": "error",
+                "device": "" if device is None else str(device),
+                "error": "device must be a non-empty string"
+            }
+
+        target_device = device.strip()
+        config = await asyncio.to_thread(capture_running_config, target_device)
+
+        return {
+            "status": "success",
+            "device": target_device,
+            "config": config
+        }
+    except Exception as e:
+        logger.error(f"Failed to harvest running config: {e}")
+        return {
+            "status": "error",
+            "device": "" if device is None else str(device),
+            "error": str(e)
+        }
+
+
+@mcp.tool
+async def bootstrap_devices(devices: Dict[str, int]) -> Dict[str, Any]:
+    """
+    Write helper/devices.json with provided device/port mappings and fixed console host.
+    """
+    try:
+        if not isinstance(devices, dict):
+            return {
+                "status": "error",
+                "error": "devices must be an object mapping device names to integer ports",
+            }
+
+        normalized: Dict[str, Dict[str, Any]] = {}
+        for name, port in devices.items():
+            if not isinstance(name, str) or not name.strip():
+                return {
+                    "status": "error",
+                    "error": "each device name must be a non-empty string",
+                }
+            if not isinstance(port, int):
+                return {
+                    "status": "error",
+                    "error": f"port for device '{name}' must be an integer",
+                }
+            normalized[name.strip()] = {
+                "host": "100.95.123.100",
+                "port": port,
+            }
+
+        def write_devices() -> None:
+            os.makedirs(os.path.dirname(DEVICES_FILE), exist_ok=True)
+            with open(DEVICES_FILE, "w", encoding="utf-8") as f:
+                json.dump(normalized, f, indent=2)
+
+        await asyncio.to_thread(write_devices)
+
+        return {
+            "status": "success",
+            "device_count": len(normalized),
+            "devices": normalized,
+            "path": DEVICES_FILE,
+        }
+    except Exception as e:
+        logger.error(f"Failed to bootstrap devices: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
         }
 
 # Tool: Get node details (including console host/port)

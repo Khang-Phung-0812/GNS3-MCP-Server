@@ -301,6 +301,43 @@ TOOLS: Dict[str, Dict[str, Any]] = {
             "description": "Returns JSON data from gns3_export_project.",
         },
     },
+    "harvest_running_config": {
+        "func": server.harvest_running_config,
+        "description": "Capture the running configuration from a device using console_harvester.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "device": {
+                    "type": "string",
+                    "description": "Device name to harvest running-config from.",
+                },
+            },
+            "required": ["device"],
+        },
+        "outputSchema": {
+            "type": "object",
+            "description": "Returns JSON data from harvest_running_config.",
+        },
+    },
+    "bootstrap_devices": {
+        "func": server.bootstrap_devices,
+        "description": "Write helper/devices.json with provided device/port mappings and fixed console host.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "devices": {
+                    "type": "object",
+                    "description": "Mapping of device names to console ports.",
+                    "additionalProperties": {"type": "integer"},
+                },
+            },
+            "required": ["devices"],
+        },
+        "outputSchema": {
+            "type": "object",
+            "description": "Returns JSON data from bootstrap_devices.",
+        },
+    },
 }
 
 
@@ -582,10 +619,6 @@ async def mcp_endpoint(request: Request):
                 },
             }
 
-        # Fill defaults
-        if not arguments.get("server_url"):
-            arguments["server_url"] = DEFAULT_GNS3_URL
-
         func_obj: Callable = TOOLS[tool_name]["func"]
 
         # FastMCP @mcp.tool decorators wrap functions in FunctionTool objects.
@@ -597,6 +630,19 @@ async def mcp_endpoint(request: Request):
             callable_func = lambda **kwargs: func_obj.run(kwargs)
         else:
             callable_func = func_obj
+
+        # Fill defaults only when the target supports them
+        target_sig = inspect.signature(callable_func)
+        accepts_kwargs = any(
+            param.kind == inspect.Parameter.VAR_KEYWORD
+            for param in target_sig.parameters.values()
+        )
+        if "server_url" in target_sig.parameters and not arguments.get("server_url"):
+            arguments["server_url"] = DEFAULT_GNS3_URL
+        if not accepts_kwargs:
+            arguments = {
+                k: v for k, v in arguments.items() if k in target_sig.parameters
+            }
 
         try:
             # Call your async function from server.py
