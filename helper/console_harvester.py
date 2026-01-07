@@ -3,11 +3,15 @@ import time
 import json
 import os
 import re
+from urllib.parse import urlparse
+from typing import Optional
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEVICES_FILE = os.path.join(BASE_DIR, "devices.json")
 
 PROMPT_REGEX = re.compile(rb"[>#]\s*$")
+LOCAL_CONSOLE_HOSTS = {"", "0.0.0.0", "127.0.0.1", "localhost"}
+DEFAULT_GNS3_SERVER_URL = "http://100.95.123.100:3080"
 
 
 class ConsoleHarvesterError(Exception):
@@ -20,6 +24,19 @@ def load_devices():
 
     with open(DEVICES_FILE, "r") as f:
         return json.load(f)
+
+
+def _resolve_console_host(host: str, server_url: Optional[str]) -> str:
+    """
+    Normalize local console binds to the GNS3 server host.
+    """
+    if host in LOCAL_CONSOLE_HOSTS:
+        resolved_server_url = server_url or os.environ.get(
+            "GNS3_SERVER_URL", DEFAULT_GNS3_SERVER_URL
+        )
+        parsed = urlparse(resolved_server_url)
+        return parsed.hostname or "127.0.0.1"
+    return host
 
 
 def wait_for_prompt(tn, timeout=300):
@@ -67,7 +84,7 @@ def send_and_wait(tn, command, timeout=20):
         f"Timeout waiting for prompt after command: {command}")
 
 
-def capture_running_config(device_name):
+def capture_running_config(device_name: str, server_url: Optional[str] = None):
     devices = load_devices()
 
     if device_name not in devices:
@@ -75,6 +92,8 @@ def capture_running_config(device_name):
 
     host = devices[device_name]["host"]
     port = devices[device_name]["port"]
+
+    host = _resolve_console_host(host, server_url)
 
     tn = telnetlib.Telnet(host, port, timeout=10)
 

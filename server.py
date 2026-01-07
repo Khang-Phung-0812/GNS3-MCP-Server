@@ -33,6 +33,23 @@ mcp = FastMCP("GNS3 Network Simulator")
 # Configuration models
 DEVICES_FILE = os.path.join(os.path.dirname(__file__), "helper", "devices.json")
 
+LOCAL_CONSOLE_HOSTS = {"", "0.0.0.0", "127.0.0.1", "localhost"}
+
+
+def _resolve_console_host(
+    console_host: Optional[str],
+    node_console_host: Optional[str],
+    server_url: str,
+) -> str:
+    """
+    Resolve console host, preferring explicit overrides and normalizing local binds.
+    """
+    host = console_host or node_console_host or ""
+    if host in LOCAL_CONSOLE_HOSTS:
+        parsed = urlparse(server_url)
+        return parsed.hostname or "127.0.0.1"
+    return host
+
 
 class GNS3Config(BaseModel):
     """Configuration for GNS3 server connection."""
@@ -821,10 +838,8 @@ async def gns3_push_cli(
 
         # Resolve console endpoint from node details when not provided
         node = await client.get_node(project_id, node_id)
-        host = console_host or node.get("console_host")
-        if not host:
-            parsed = urlparse(server_url)
-            host = parsed.hostname or "127.0.0.1"
+        host = _resolve_console_host(
+            console_host, node.get("console_host"), server_url)
         port = console_port or node.get("console")
         if port is None:
             raise Exception("Console port not available for this node.")
@@ -897,10 +912,8 @@ async def gns3_exec_cli(
 
         # Resolve console endpoint
         node = await client.get_node(project_id, node_id)
-        host = console_host or node.get("console_host")
-        if not host:
-            parsed = urlparse(server_url)
-            host = parsed.hostname or "127.0.0.1"
+        host = _resolve_console_host(
+            console_host, node.get("console_host"), server_url)
         port = console_port or node.get("console")
         if port is None:
             raise Exception("Console port not available for this node.")
@@ -952,7 +965,10 @@ async def gns3_exec_cli(
 
 
 @mcp.tool
-async def harvest_running_config(device: str) -> Dict[str, str]:
+async def harvest_running_config(
+    device: str,
+    server_url: Optional[str] = None,
+) -> Dict[str, str]:
     """Capture the running configuration from a device using console_harvester."""
     try:
         if not isinstance(device, str) or not device.strip():
@@ -963,7 +979,8 @@ async def harvest_running_config(device: str) -> Dict[str, str]:
             }
 
         target_device = device.strip()
-        config = await asyncio.to_thread(capture_running_config, target_device)
+        config = await asyncio.to_thread(
+            capture_running_config, target_device, server_url)
 
         return {
             "status": "success",

@@ -311,6 +311,10 @@ TOOLS: Dict[str, Dict[str, Any]] = {
                     "type": "string",
                     "description": "Device name to harvest running-config from.",
                 },
+                "server_url": {
+                    "type": ["string", "null"],
+                    "description": "Optional GNS3 server URL for resolving console host.",
+                },
             },
             "required": ["device"],
         },
