@@ -1,525 +1,194 @@
-# 🚀 GNS3 Network Simulator MCP Server
+# GNS3 MCP Server
 
 [![MCP Protocol](https://img.shields.io/badge/MCP-Protocol-blue.svg)](https://modelcontextprotocol.io/)
-[![FastMCP](https://img.shields.io/badge/FastMCP-2.12.0-green.svg)](https://github.com/anselmholden/fastmcp)
-[![Python](https://img.shields.io/badge/Python-3.8+-yellow.svg)](https://python.org)
-[![License](https://img.shields.io/badge/License-MIT-red.svg)](LICENSE)
+[![FastMCP](https://img.shields.io/badge/FastMCP-2.x-green.svg)](https://github.com/anselmholden/fastmcp)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-teal.svg)](https://fastapi.tiangolo.com/)
+[![Uvicorn](https://img.shields.io/badge/Uvicorn-0.30+-purple.svg)](https://www.uvicorn.org/)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-yellow.svg)](https://python.org)
 [![GNS3](https://img.shields.io/badge/GNS3-Compatible-orange.svg)](https://gns3.com/)
 
-> **The Ultimate AI-Powered GNS3 Network Simulation MCP Server**  
-> Transform your network engineering workflow with AI-driven network topology creation, management, and simulation control through the Model Context Protocol (MCP).
+> **AI-ready, MCP-based control plane for GNS3 automation**  
+> Deterministic tools, clean schemas, and a production-style HTTP MCP surface for network labs.
 
 ---
 
-## 🎯 **Why This MCP Server is Revolutionary**
+## What This Is ✅
 
-### **🤖 AI-First Network Engineering**
-- **Natural Language to Network**: Describe your network in plain English, watch AI build it
-- **Intelligent Topology Design**: AI suggests optimal network architectures based on requirements
-- **Automated Configuration**: Generate device configurations automatically
-- **Smart Troubleshooting**: AI-powered network diagnostics and debugging
+- An MCP-compliant execution layer for GNS3, built with FastMCP
+- A clean separation between reasoning (agent) and execution (this server)
+- A schema-defined tool surface over direct GNS3 REST API calls
+- A control plane for on-prem or remote network labs
 
-### **🔥 Production-Ready Features**
-- **12 Comprehensive Tools**: Complete GNS3 API integration
-- **Real-time Operations**: Live network simulation control
-- **Multi-platform Support**: Windows, macOS, Linux
-- **Enterprise Security**: Authentication and secure connections
-- **High Performance**: Async operations with connection pooling
+## What This Is Not ❌
 
----
-
-## 📋 **Complete Feature Matrix**
-
-| **Category** | **Tools** | **Capabilities** | **Use Cases** |
-|--------------|-----------|------------------|---------------|
-| **Project Management** | 3 tools | Create, list, open projects | Lab setup, project organization |
-| **Topology Builder** | 4 tools | Add nodes, links, configure devices | Network design, architecture |
-| **Simulation Control** | 2 tools | Start/stop simulations | Network testing, verification |
-| **Analysis Tools** | 3 tools | Traffic capture, topology analysis | Performance monitoring, debugging |
+- No natural language interpretation inside the MCP server
+- No topology intelligence or AI reasoning
+- No automated configuration generation beyond explicit tool calls
+- No analytics or ML logic
 
 ---
 
-## 🛠️ **Installation & Setup (Lightning Fast)**
+## Architecture Overview 🧭
 
-### **Prerequisites**
-- **GNS3 Server** running on `http://localhost:3080` (default)
-- **Python 3.8+** installed
-- **Gemini CLI** installed and configured
-
-### **Quick Start (30 seconds)**
-
-```bash
-# 1. Clone/Download the MCP server
-git clone <repository-url>
-cd gns3-mcp-server
-
-# 2. Install dependencies (automatic on first run)
-python -m pip install fastmcp httpx pydantic
-
-# 3. Add to Gemini CLI
-gemini mcp add gns3 "path/to/gns3-mcp-server/run.bat"
-
-# 4. Test the connection
-gemini "List all GNS3 projects"
+```
+MCP Client
+   |
+   v
+HTTP MCP Server (FastAPI + Uvicorn, /mcp, JSON-RPC)
+   |
+   v
+Tool Layer (FastMCP tools in server.py)
+   |
+   v
+GNS3 Server (REST API + console ports)
 ```
 
-**🎉 That's it! You're now ready for AI-powered network engineering!**
+Why HTTP MCP matters:
+- Standardized JSON-RPC endpoint for tool discovery and invocation
+- Easy to front with proxies, gateways, or internal service meshes
+- Clear separation of transport (http_server.py) and tool logic (server.py)
 
 ---
 
-## 🎮 **Available MCP Tools**
+## Why MCP for GNS3? 💡
 
-### **🔧 Project Management Suite**
-
-#### `gns3_list_projects`
-**List all GNS3 projects with detailed status information**
-```bash
-gemini "Show me all my GNS3 projects and their status"
-```
-
-**Features:**
-- Complete project inventory
-- Status monitoring (running, stopped, paused)
-- File sizes and locations
-- Last modified timestamps
-- Device count per project
-
-#### `gns3_create_project`
-**Create new GNS3 projects programmatically**
-```bash
-gemini "Create a new project called 'AI_Network_Lab' for testing"
-```
-
-**Parameters:**
-- `name`: Project name
-- `auto_delete`: Auto-remove project on shutdown
-- `auto_close`: Auto-close project on shutdown
-
-#### `gns3_open_project`
-**Open existing projects for modification**
-```bash
-gemini "Open the project with ID 'abc123'"
-```
+- **Not the GUI**: deterministic automation beats point-and-click for repeatable labs
+- **Not raw REST**: MCP adds discoverable tools and structured schemas
+- **Agent-friendly**: safe, explicit parameters with no hidden execution
+- **Automation-ready**: works with Codex, Claude, Gemini, or custom orchestrators
 
 ---
 
-### **🏗️ Network Topology Builder**
+## Implemented MCP Tools 🧰
 
-#### `gns3_add_node`
-**Add network devices to your topology**
-```bash
-gemini "Add a Cisco 2821 router named 'R1' to the topology"
-```
+All tools below exist in `server.py` and are exposed through `http_server.py`.
 
-**Supported Device Types:**
-- **Routers**: `cisco_ios`, `cisco_c7200`, `cisco_3745`, `arista_vEOS`, `juniper_vmx`
-- **Switches**: `cisco_iosv`, `cisco_c3725`, `multilayer_switch`
-- **Endpoints**: `vpcs`, `cloud`, `docker`, `virtualbox`, `vmware`
-- **Security**: `paloalto_panos`, `fortinet_fortigate`
-
-**Advanced Features:**
-- Custom positioning (x, y coordinates)
-- Console type configuration
-- Custom properties and metadata
-- Template-based deployment
-
-#### `gns3_add_link`
-**Connect network devices with various link types**
-```bash
-gemini "Connect R1 to R2 with an Ethernet link"
-```
-
-**Link Types:**
-- `ethernet`: Standard Ethernet connections
-- `serial`: Serial connections with clock rate
-- `console`: Console connections
-- `custom`: User-defined link types
-
-#### `gns3_configure_device`
-**Configure device settings and parameters**
-```bash
-gemini "Configure R1 with IP 192.168.1.1/24 on interface Gi0/0"
-```
-
-**Configuration Options:**
-- Interface IP addresses
-- Routing protocols (OSPF, EIGRP, BGP)
-- VLAN configurations
-- Access control lists
-- QoS policies
+| Category | Tool | Purpose |
+|---|---|---|
+| Project | `gns3_list_projects` | List projects with status and stats |
+| Project | `gns3_create_project` | Create a project |
+| Project | `gns3_open_project` | Open a project |
+| Project | `gns3_close_project` | Close a project |
+| Project | `gns3_save_project` | Save project (optional snapshot) |
+| Project | `gns3_update_project` | Update project name/auto_close |
+| Project | `gns3_get_project_settings` | Read project settings |
+| Nodes | `gns3_add_node` | Add a node (supports compute_id, templates) |
+| Nodes | `gns3_get_node` | Get node details |
+| Nodes | `gns3_configure_device` | Update node properties |
+| Links | `gns3_add_link` | Create a link between nodes |
+| Links | `gns3_delete_link` | Delete a link |
+| Simulation | `gns3_start_simulation` | Start all nodes |
+| Simulation | `gns3_stop_simulation` | Stop all nodes |
+| Topology | `gns3_get_topology` | Summarize nodes and links |
+| Traffic | `gns3_capture_traffic` | Start capture on a link |
+| Console | `gns3_push_cli` | Send CLI commands via telnet |
+| Console | `gns3_exec_cli` | Execute commands and return output |
+| Console | `harvest_running_config` | Capture running-config via telnet |
+| Console | `bootstrap_devices` | Create `helper/devices.json` mappings |
+| Export | `gns3_export_project` | Prepare export parameters (UI completes export) |
 
 ---
 
-### **⚡ Simulation Control**
+## Installation & Running Modes 🚀
 
-#### `gns3_start_simulation`
-**Launch network simulations with full node control**
+### 1) Local tool layer (FastMCP)
+Runs the tool layer directly:
+
 ```bash
-gemini "Start the simulation for project 'abc123'"
+python server.py
 ```
 
-**Capabilities:**
-- Start all devices simultaneously
-- Selective device startup
-- Background processing
-- Real-time status updates
+### 2) HTTP MCP server (FastAPI + Uvicorn)
 
-#### `gns3_stop_simulation`
-**Stop simulations gracefully**
 ```bash
-gemini "Stop the current simulation"
+uvicorn http_server:app --host 0.0.0.0 --port 9090 --no-access-log
+```
+
+The `/mcp` endpoint supports MCP JSON-RPC:
+- `initialize`
+- `tools/list`
+- `tools/call`
+
+### 3) `run.sh` bootstrap (uv-based)
+For environments that use `uv`:
+
+```bash
+./run.sh
 ```
 
 ---
 
-### **📊 Network Analysis Tools**
+## Environment Variables ⚙️
 
-#### `gns3_capture_traffic`
-**Capture and analyze network traffic**
-```bash
-gemini "Start traffic capture on the link between R1 and R2"
-```
-
-**Analysis Features:**
-- Real-time packet capture
-- Protocol filtering (HTTP, TCP, UDP, ICMP)
-- Traffic statistics
-- Export capabilities
-
-#### `gns3_get_topology`
-**Retrieve comprehensive topology information**
-```bash
-gemini "Show me the current network topology with all connections"
-```
-
-**Information Provided:**
-- Device inventory
-- Link mappings
-- Network statistics
-- Health status
-
-#### `gns3_save_project`
-**Save projects with optional snapshots**
-```bash
-gemini "Save the current project with a checkpoint"
-```
-
-#### `gns3_export_project`
-**Export projects for sharing or backup**
-```bash
-gemini "Export the project to 'network_lab_backup.zip'"
-```
+| Variable | Purpose | Default |
+|---|---|---|
+| `GNS3_SERVER_URL` | Base URL for the GNS3 server | `http://100.95.123.100:3080` |
 
 ---
 
-## 🧪 **Real-World Usage Examples**
+## Example MCP Workflows 🔧
 
-### **Example 1: Complete Network Setup**
+### Example 1: Project lifecycle
+1. Call `gns3_create_project` with `name`
+2. Call `gns3_open_project` with `project_id`
+3. Call `gns3_save_project` (optional snapshot)
+4. Call `gns3_close_project`
 
-```bash
-# AI Conversation to build a complete enterprise network
-gemini "I need to create a test environment for a multi-branch office network"
+### Example 2: Build a minimal topology
+1. `gns3_add_node` (router, switch, etc.)
+2. `gns3_add_link` between nodes
+3. `gns3_start_simulation`
+4. `gns3_get_topology` to verify
 
-# AI responds with project creation
-gemini "Creating project 'Multi_Branch_Test' now..."
+### Example 3: Console workflow
+1. `gns3_exec_cli` to run show commands
+2. `gns3_push_cli` to apply config changes
+3. `harvest_running_config` to pull running-config
 
-# AI adds network devices
-gemini "Adding devices: HQ Router, Branch1 Router, Branch2 Router, switches, and endpoints..."
-
-# AI connects them with proper topology
-gemini "Connecting devices with appropriate links and configuring interfaces..."
-
-# AI starts simulation
-gemini "Starting network simulation to verify connectivity..."
-```
-
-### **Example 2: Network Troubleshooting**
-
-```bash
-# AI-assisted network diagnostics
-gemini "My network between routers R1 and R2 has connectivity issues"
-
-# AI provides diagnostic sequence
-gemini "Running traffic capture on the link... Analyzing traffic patterns... Checking device status..."
-
-# AI gives recommendations
-gemini "Issue detected: Interface Gi0/0 on R1 shows high packet loss. Suggestion: Check cable connections and restart interface."
-```
-
-### **Example 3: Network Architecture Design**
-
-```bash
-# AI-powered network design
-gemini "Design a secure network for 1000 users with internet access and VPN"
-
-# AI provides optimized topology
-gemini "Designing hierarchical network with firewall, core switches, access switches, and VPN gateway..."
-```
-
----
-
-## 🔧 **Advanced Configuration**
-
-### **Environment Variables**
-
-```bash
-# Set custom GNS3 server
-export GNS3_SERVER_URL="http://192.168.1.100:3080"
-
-# Configure authentication
-export GNS3_USERNAME="admin"
-export GNS3_PASSWORD="secure_password"
-
-# SSL/TLS settings
-export GNS3_VERIFY_SSL="false"
-```
-
-### **Custom Templates**
-
-Create device templates for rapid deployment:
+### MCP JSON-RPC call (tools/call)
 
 ```json
 {
-  "name": "Enterprise_Router",
-  "device_type": "cisco_ios",
-  "default_config": {
-    "interfaces": [
-      {"name": "Gi0/0", "ip": "10.0.0.1/24"},
-      {"name": "Gi0/1", "ip": "192.168.1.1/24"}
-    ],
-    "routing": {
-      "protocol": "ospf",
-      "area": "0"
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "gns3_list_projects",
+    "arguments": {
+      "server_url": "http://100.95.123.100:3080"
     }
   }
 }
 ```
 
-### **Performance Tuning**
+---
 
-```python
-# Async configuration for high-performance operations
-config = {
-    "connection_pool_size": 20,
-    "request_timeout": 30,
-    "retry_attempts": 3,
-    "concurrent_operations": 10
-}
-```
+## Design & Security Notes 🔒
+
+- Schema-driven tools with explicit parameters
+- Deterministic tool execution; no hidden behavior
+- On-prem friendly: all calls route to your GNS3 server
+- Console access uses telnet; ensure console ports are reachable
 
 ---
 
-## 📊 **System Requirements**
+## Limitations & Scope 🧱
 
-### **Minimum Requirements**
-- **CPU**: 2 cores, 2.0 GHz
-- **RAM**: 4 GB
-- **Storage**: 500 MB available
-- **Network**: 1 Mbps internet connection
-
-### **Recommended for Production**
-- **CPU**: 4+ cores, 3.0 GHz+
-- **RAM**: 8+ GB
-- **Storage**: 2+ GB SSD
-- **Network**: 10+ Mbps internet connection
-
-### **Supported Platforms**
-- ✅ **Windows 10/11** (x64)
-- ✅ **macOS 10.15+** (Intel/Apple Silicon)
-- ✅ **Ubuntu 18.04+** (x64/ARM64)
-- ✅ **CentOS 7/8** (x64)
-- ✅ **Docker** (Linux containers)
+- No natural language parsing or reasoning inside the MCP server
+- No topology inference or optimization
+- `gns3_export_project` only prepares parameters; GNS3 UI performs export
+- Console tools require working telnet console access
+- `harvest_running_config` depends on `helper/devices.json` mappings
 
 ---
 
-## 🚨 **Troubleshooting Guide**
+## Future Roadmap (Planned) 🗺️
 
-### **Common Issues & Solutions**
+> These are future ideas, not current features.
 
-#### **Issue: "Connection failed"**
-```bash
-# Solution 1: Check GNS3 server is running
-# Solution 2: Verify server URL
-# Solution 3: Check firewall settings
-
-gemini "Ping the GNS3 server to check connectivity"
-```
-
-#### **Issue: "Device template not found"**
-```bash
-# Solution: Verify device templates are installed in GNS3
-# Use GNS3 GUI to import templates
-```
-
-#### **Issue: "Authentication failed"**
-```bash
-# Solution: Check username/password in environment variables
-export GNS3_USERNAME="your_username"
-export GNS3_PASSWORD="your_password"
-```
-
-#### **Issue: "Rate limit exceeded"**
-```bash
-# Solution: Wait for quota reset or upgrade API plan
-# Current rate limit: 1000 requests/hour
-```
-
-### **Debug Mode**
-
-Enable debug logging:
-
-```bash
-export GNS3_MCP_DEBUG=1
-gemini "Debug information: Show current GNS3 server status"
-```
+- AI-assisted topology suggestions
+- Config generation workflows
+- Validation and drift checks
+- Lab analytics and reporting
 
 ---
-
-## 🎓 **Use Cases by Industry**
-
-### **🏫 Education**
-- **Network Labs**: Automated lab setup for students
-- **Curriculum**: Interactive network engineering exercises
-- **Assessment**: Automated grading of network configurations
-
-### **🏢 Enterprise**
-- **Network Testing**: Pre-deployment testing environments
-- **Training**: Staff network certification training
-- **Proof of Concept**: Quick network solution validation
-
-### **🛡️ Security**
-- **Penetration Testing**: Safe testing environments
-- **Security Training**: Red team exercises
-- **Vulnerability Research**: Controlled testing environments
-
-### **🏭 Telecom**
-- **Protocol Testing**: Multi-vendor interoperability
-- **Service Deployment**: Pre-production testing
-- **Performance Benchmarking**: Network optimization
-
----
-
-## 🔬 **Technical Architecture**
-
-### **System Components**
-
-```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   Gemini CLI    │◄──►│  GNS3 MCP Server │◄──►│  GNS3 Server    │
-│                 │    │                  │    │                 │
-│ • AI Interface  │    │ • 12 MCP Tools   │    │ • REST API      │
-│ • Tool Discovery│    │ • Async Client   │    │ • WebSocket     │
-│ • JSON-RPC      │    │ • Error Handling │    │ • Real-time     │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-```
-
-### **Protocol Flow**
-
-1. **Tool Discovery**: Gemini CLI discovers all available MCP tools
-2. **Request Processing**: User request mapped to specific MCP tool
-3. **API Translation**: MCP tool converts to GNS3 REST API call
-4. **Response Processing**: GNS3 response transformed to user-friendly format
-5. **Real-time Updates**: WebSocket connections for live status updates
-
-### **Security Architecture**
-
-```
-🔐 Authentication Flow
-├── Username/Password
-├── Token-based Authentication
-├── SSL/TLS Encryption
-└── Rate Limiting
-```
-
----
-
-## 📈 **Performance Metrics**
-
-### **Operation Times (Typical)**
-- **List Projects**: ~200ms
-- **Create Project**: ~500ms
-- **Add Network Device**: ~300ms
-- **Create Link**: ~250ms
-- **Start Simulation**: ~1-2 seconds
-- **Traffic Capture**: Real-time
-
-### **Throughput**
-- **Concurrent Operations**: 10 simultaneous requests
-- **Daily Operations**: 10,000+ requests
-- **Uptime**: 99.9% availability
-
-### **Resource Usage**
-- **CPU**: <2% during normal operation
-- **RAM**: ~100MB baseline
-- **Network**: <1Mbps for API calls
-
----
-
-## 🤝 **Community & Support**
-
-### **Documentation**
-- 📖 **[Installation Guide](docs/installation.md)**
-- 🔧 **[API Reference](docs/api-reference.md)**
-- 🎮 **[Usage Examples](docs/examples.md)**
-- 🐛 **[Troubleshooting](docs/troubleshooting.md)**
-
-### **Community**
-- 💬 **Discord**: [Join our community](https://discord.gg/gns3-mcp)
-- 📧 **Email**: support@gns3-mcp.dev
-- 🐛 **Issues**: [GitHub Issues](https://github.com/gns3-mcp/issues)
-- 📝 **Blog**: [gns3-mcp.dev/blog](https://gns3-mcp.dev/blog)
-
-### **Contributing**
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
----
-
-## 📜 **License**
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 🙏 **Acknowledgments**
-
-- **GNS3 Team**: For the amazing network simulation platform
-- **FastMCP**: For the excellent MCP framework
-- **Gemini CLI**: For providing the AI interface
-- **Community**: For continuous feedback and improvements
-
----
-
-## 🚀 **What's Next?**
-
-### **Upcoming Features**
-- [ ] **Multi-region Support**: Global GNS3 server management
-- [ ] **AI Optimization**: Machine learning-powered topology suggestions
-- [ ] **Advanced Analytics**: Network performance analytics
-- [ ] **Template Marketplace**: Community-driven device templates
-- [ ] **Cloud Integration**: Support for cloud-based GNS3 servers
-
-### **Roadmap**
-```
-Q1 2025: Multi-region support
-Q2 2025: AI optimization engine
-Q3 2025: Advanced analytics dashboard
-Q4 2025: Template marketplace launch
-```
-
----
-
-<div align="center">
-
-## 🎯 **Ready to Transform Your Network Engineering?**
-
-[![Get Started](https://img.shields.io/badge/🚀-Get_Started-blue?style=for-the-badge)](https://github.com/gns3-mcp/setup)
-[![Documentation](https://img.shields.io/badge/📖-Documentation-green?style=for-the-badge)](https://docs.gns3-mcp.dev)
-[![Examples](https://img.shields.io/badge/🎮-Examples-orange?style=for-the-badge)](https://examples.gns3-mcp.dev)
-
-**⭐ Star this repository if it helps you build amazing networks! ⭐**
-
----
-
-**Built with ❤️ for the Network Engineering Community**
-
-</div>
