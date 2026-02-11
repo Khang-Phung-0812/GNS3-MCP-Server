@@ -53,7 +53,7 @@ def _resolve_console_host(
 
 class GNS3Config(BaseModel):
     """Configuration for GNS3 server connection."""
-    server_url: str = Field(default="http://100.95.123.100:3080",
+    server_url: str = Field(default="http://localhost:3080",
                             description="GNS3 server URL")
     username: Optional[str] = Field(
         default=None, description="Username for authentication")
@@ -1008,6 +1008,9 @@ async def bootstrap_devices(devices: Dict[str, int]) -> Dict[str, Any]:
                 "error": "devices must be an object mapping device names to integer ports",
             }
 
+        default_url = os.getenv("GNS3_SERVER_URL", "http://localhost:3080")
+        default_host = urlparse(default_url).hostname or "127.0.0.1"
+
         normalized: Dict[str, Dict[str, Any]] = {}
         for name, port in devices.items():
             if not isinstance(name, str) or not name.strip():
@@ -1021,7 +1024,7 @@ async def bootstrap_devices(devices: Dict[str, int]) -> Dict[str, Any]:
                     "error": f"port for device '{name}' must be an integer",
                 }
             normalized[name.strip()] = {
-                "host": "100.95.123.100",
+                "host": default_host,
                 "port": port,
             }
 

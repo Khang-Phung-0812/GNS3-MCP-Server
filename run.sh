@@ -3,13 +3,20 @@ set -e
 
 cd "$(dirname "$0")"
 
-if [ ! -d ".venv" ]; then
-    echo "[INFO] Creating virtual environment..." >&2
-    /home/tram/.local/bin/uv venv >&2
-    echo "[INFO] Installing dependencies..." >&2
-    /home/tram/.local/bin/uv sync >&2
+if ! command -v uv >/dev/null 2>&1; then
+    echo "[ERROR] 'uv' was not found in PATH. Install uv first: https://docs.astral.sh/uv/" >&2
+    exit 1
 fi
 
-export GNS3_SERVER_URL="http://100.95.123.100:3080"
+if [ ! -d ".venv" ]; then
+    echo "[INFO] Creating virtual environment..." >&2
+    uv venv >&2
+fi
 
-/home/tram/.local/bin/uv run uvicorn http_server:app --host 0.0.0.0 --port 9090 --no-access-log
+echo "[INFO] Syncing dependencies..." >&2
+uv sync >&2
+
+: "${GNS3_SERVER_URL:=http://localhost:3080}"
+export GNS3_SERVER_URL
+
+uv run uvicorn http_server:app --host 0.0.0.0 --port 9090 --no-access-log

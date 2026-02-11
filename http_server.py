@@ -19,7 +19,7 @@ logging.basicConfig(level=logging.CRITICAL)
 app = FastAPI()
 
 # Default GNS3 server URL
-DEFAULT_GNS3_URL = os.getenv("GNS3_SERVER_URL", "http://100.95.123.100:3080")
+DEFAULT_GNS3_URL = os.getenv("GNS3_SERVER_URL", "http://localhost:3080")
 
 # MCP protocol negotiation
 SUPPORTED_PROTOCOL_VERSIONS = [
