@@ -75,10 +75,10 @@ sudo tailscale up
 tailscale ip -4
 ```
 
-If your Ubuntu host (running this MCP server) is `100.86.80.188` and your actual GNS3 API is on `100.95.123.100:3080`:
+If your Ubuntu host (running this MCP server) is `100.86.80.118` and your actual GNS3 API is on `100.95.123.100:3080`:
 
 ```text
-MCP server: http://100.86.80.188:9090/mcp
+MCP server: http://100.86.80.118:9090/mcp
 GNS3 API:   http://100.95.123.100:3080
 ```
 
@@ -120,7 +120,7 @@ http://100.86.80.188:9090/mcp
 Quick connectivity check from any machine that can reach the Ubuntu host:
 
 ```bash
-curl -s http://100.86.80.188:9090/mcp \
+curl -s http://100.86.80.118:9090/mcp \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
 ```
@@ -132,7 +132,7 @@ Codex CLI and Codex IDE extension share MCP configuration.
 Option 1 (recommended): add via CLI
 
 ```bash
-codex mcp add gns3Remote --url http://100.86.80.188:9090/mcp
+codex mcp add gns3Remote --url http://100.86.80.118:9090/mcp
 codex mcp list
 ```
 
@@ -150,7 +150,7 @@ args = [
 ```
 
 Notes:
-- Use `100.86.80.188` (your MCP host), not `100.86.80.118`.
+- Used Your MCP Host instead of `100.86.80.118`.
 - `--allow-http` is required here because this endpoint is `http` (not `https`).
 
 After connecting, you can ask Codex to call tools such as:
