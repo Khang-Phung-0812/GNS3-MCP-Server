@@ -23,6 +23,7 @@ MCP Client
 
 - Python 3.10+
 - `uv` package manager (recommended)
+- Node.js (required if using `mcp-remote` via `npx`)
 - Running GNS3 server (local or remote)
 - Network access from this MCP server host to:
   - `GNS3_SERVER_URL` (default `http://localhost:3080`)
@@ -108,6 +109,55 @@ curl -s http://127.0.0.1:9090/mcp \
 - `tools/list`
 - `tools/call`
 
+## Client Connection Example
+
+Use this MCP endpoint from your MCP client configuration:
+
+```text
+http://100.86.80.188:9090/mcp
+```
+
+Quick connectivity check from any machine that can reach the Ubuntu host:
+
+```bash
+curl -s http://100.86.80.188:9090/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+```
+
+## Connect Codex To This Remote MCP Server
+
+Codex CLI and Codex IDE extension share MCP configuration.
+
+Option 1 (recommended): add via CLI
+
+```bash
+codex mcp add gns3Remote --url http://100.86.80.188:9090/mcp
+codex mcp list
+```
+
+Option 2: use `mcp-remote` (requires Node.js + `npx`)
+
+```toml
+[mcp_servers.gns3]
+command = "C:\\PROGRA~1\\nodejs\\npx.cmd"
+args = [
+  "-y",
+  "mcp-remote",
+  "http://100.86.80.188:9090/mcp",
+  "--allow-http"
+]
+```
+
+Notes:
+- Use `100.86.80.188` (your MCP host), not `100.86.80.118`.
+- `--allow-http` is required here because this endpoint is `http` (not `https`).
+
+After connecting, you can ask Codex to call tools such as:
+
+- `gns3_list_projects` with `server_url` = `http://100.95.123.100:3080`
+- `gns3_get_topology` with your `project_id`
+
 ## Main Tools
 
 - `gns3_list_projects`
@@ -150,13 +200,3 @@ curl -s http://127.0.0.1:9090/mcp \
 
 - `.venv/` and Python caches are git-ignored
 - Default URLs are neutral (`localhost`) and override via env vars
-
-## Publishing to GitHub
-
-```bash
-git add .
-git commit -m "docs: publish portable ubuntu+tailscale setup guide"
-git push origin main
-```
-
-If push fails from restricted environments, push from your local terminal with normal network access.
